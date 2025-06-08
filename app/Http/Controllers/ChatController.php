@@ -5,10 +5,14 @@ namespace App\Http\Controllers;
 use App\Models\Chat;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Inertia\Inertia;
-use OpenAI\Laravel\Facades\OpenAI;
 use Illuminate\Http\StreamedEvent;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Inertia\Inertia;
+use Prism\Prism\Enums\Provider;
+use Prism\Prism\Prism;
+use Prism\Prism\ValueObjects\Messages\SystemMessage;
+use Prism\Prism\ValueObjects\Messages\UserMessage;
 
 class ChatController extends Controller
 {
@@ -115,6 +119,8 @@ class ChatController extends Controller
             $this->authorize('view', $chat);
         }
 
+        ob_start(); // Hack to ensure output buffering is enabled for streaming: https://github.com/prism-php/prism/issues/381
+
         return response()->stream(function () use ($request, $chat) {
             $messages = $request->input('messages', []);
 
@@ -135,44 +141,44 @@ class ChatController extends Controller
                 }
             }
 
-            // Prepare messages for OpenAI
-            $openAIMessages = collect($messages)
-                ->map(fn ($message) => [
-                    'role' => $message['type'] === 'prompt' ? 'user' : 'assistant',
-                    'content' => $message['content'],
-                ])
+            // Prepare messages
+            $mappedMessages = collect($messages)
+                ->map(function ($message) {
+                    return match ($message['type']) {
+                        'prompt' => new UserMessage($message['content']),
+                        'response' => new SystemMessage($message['content']),
+                        default => throw new \InvalidArgumentException('Invalid message type'),
+                    };
+                })
                 ->toArray();
 
             // Stream response from OpenAI
             $fullResponse = '';
 
-            if (app()->environment('testing') || ! config('openai.api_key')) {
+            if (app()->environment('testing')) {
                 // Mock response for testing or when API key is not set
                 $fullResponse = 'This is a test response.';
-                echo $fullResponse;
-                ob_flush();
-                flush();
+                yield $fullResponse;
             } else {
                 try {
-                    $stream = OpenAI::chat()->createStreamed([
-                        'model' => 'gpt-4.1-nano',
-                        'messages' => $openAIMessages,
-                    ]);
 
-                    foreach ($stream as $response) {
-                        $chunk = $response->choices[0]->delta->content;
-                        if ($chunk !== null) {
-                            $fullResponse .= $chunk;
-                            echo $chunk;
-                            ob_flush();
-                            flush();
-                        }
+                    $response = Prism::text()
+                        ->using(Provider::Ollama, 'llama3:8b')
+                        ->withMessages($mappedMessages)
+                        ->asStream();
+
+                    foreach ($response as $chunk) {
+                        $fullResponse .= $chunk->text;
+                        yield $chunk->text;
                     }
                 } catch (\Exception $e) {
                     $fullResponse = 'Error: Unable to generate response.';
-                    echo $fullResponse;
-                    ob_flush();
-                    flush();
+                    yield $fullResponse;
+                    Log::error('Error generating AI response', [
+                        'error' => $e->getMessage(),
+                        'stack' => $e->getTraceAsString(),
+                        'messages' => $messages,
+                    ]);
                 }
             }
 
@@ -184,19 +190,15 @@ class ChatController extends Controller
                 ]);
 
                 // Generate title if this is a new chat with "Untitled" title
-                \Log::info('Checking if should generate title', ['chat_title' => $chat->title]);
+                Log::info('Checking if should generate title', ['chat_title' => $chat->title]);
                 if ($chat->title === 'Untitled') {
-                    \Log::info('Generating title in background for chat', ['chat_id' => $chat->id]);
+                    Log::info('Generating title in background for chat', ['chat_id' => $chat->id]);
                     $this->generateTitleInBackground($chat);
                 } else {
-                    \Log::info('Not generating title', ['current_title' => $chat->title]);
+                    Log::info('Not generating title', ['current_title' => $chat->title]);
                 }
             }
-        }, 200, [
-            'Cache-Control' => 'no-cache',
-            'Content-Type' => 'text/event-stream',
-            'X-Accel-Buffering' => 'no',
-        ]);
+        });
     }
 
     private function generateChatTitle(array $messages): string
@@ -216,7 +218,7 @@ class ChatController extends Controller
     {
         $this->authorize('view', $chat);
 
-        \Log::info('Title stream requested for chat', ['chat_id' => $chat->id, 'title' => $chat->title]);
+        Log::info('Title stream requested for chat', ['chat_id' => $chat->id, 'title' => $chat->title]);
 
         return response()->eventStream(function () use ($chat) {
             // If title is already set and not "Untitled", send it immediately
@@ -259,49 +261,49 @@ class ChatController extends Controller
         // Get the first message
         $firstMessage = $chat->messages()->where('type', 'prompt')->first();
 
-        if (!$firstMessage) {
+        if (! $firstMessage) {
             return;
         }
 
         try {
-            if (app()->environment('testing') || ! config('openai.api_key')) {
+            if (app()->environment('testing')) {
                 // Mock response for testing
-                $generatedTitle = 'Chat about: ' . substr($firstMessage->content, 0, 30);
+                $generatedTitle = 'Chat about: '.substr($firstMessage->content, 0, 30);
             } else {
-                $response = OpenAI::chat()->create([
-                    'model' => 'gpt-4.1-nano',
-                    'messages' => [
+                $response = Prism::text()
+                    ->using(Provider::Ollama, 'llama3:8b')
+                    ->withMessages([
+                        new SystemMessage('Generate a concise, descriptive title (max 50 characters) for a chat that starts with the following message. Respond with only the title, no quotes or extra formatting.'),
+                        new UserMessage($firstMessage->content),
+                    ])
+                    ->withMaxTokens(20)
+                    ->withClientOptions([
                         [
-                            'role' => 'system',
-                            'content' => 'Generate a concise, descriptive title (max 50 characters) for a chat that starts with the following message. Respond with only the title, no quotes or extra formatting.'
+                            'options' => [
+                                'temperature' => 0.7,
+                            ],
                         ],
-                        [
-                            'role' => 'user',
-                            'content' => $firstMessage->content
-                        ]
-                    ],
-                    'max_tokens' => 20,
-                    'temperature' => 0.7,
-                ]);
+                    ])
+                    ->asText();
 
-                $generatedTitle = trim($response->choices[0]->message->content);
+                $generatedTitle = trim($response->text);
 
                 // Ensure title length
                 if (strlen($generatedTitle) > 50) {
-                    $generatedTitle = substr($generatedTitle, 0, 47) . '...';
+                    $generatedTitle = substr($generatedTitle, 0, 47).'...';
                 }
             }
 
             // Update the chat title
             $chat->update(['title' => $generatedTitle]);
 
-            \Log::info('Generated title for chat', ['chat_id' => $chat->id, 'title' => $generatedTitle]);
+            Log::info('Generated title for chat', ['chat_id' => $chat->id, 'title' => $generatedTitle]);
 
         } catch (\Exception $e) {
             // Fallback title on error
-            $fallbackTitle = substr($firstMessage->content, 0, 47) . '...';
+            $fallbackTitle = substr($firstMessage->content, 0, 47).'...';
             $chat->update(['title' => $fallbackTitle]);
-            \Log::error('Error generating title, using fallback', ['error' => $e->getMessage()]);
+            Log::error('Error generating title, using fallback', ['error' => $e->getMessage(), 'stack' => $e->getTraceAsString()]);
         }
     }
 }
