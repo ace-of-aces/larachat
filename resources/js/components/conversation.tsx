@@ -1,6 +1,7 @@
 import StreamingIndicator from '@/components/streaming-indicator';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef } from 'react';
+import { MemoizedMarkdown } from './memoized-markdown';
 
 type Message = {
     id?: number;
@@ -45,7 +46,9 @@ export default function Conversation({ messages, streamingData, isStreaming, str
                                 {message.type === 'prompt' && (index === messages.length - 1 || index === messages.length - 2) && streamId && (
                                     <StreamingIndicator id={streamId} className="absolute top-3 -left-8" />
                                 )}
-                                <p className="whitespace-pre-wrap">{message.content}</p>
+                                <div className={cn("prose whitespace-pre-wrap", message.type === 'response' ? "dark:prose-invert" : "not-dark:prose-invert")}>
+                                    <MemoizedMarkdown id={key} content={message.content} />
+                                </div>
                             </div>
                         </div>
                     );
@@ -53,7 +56,9 @@ export default function Conversation({ messages, streamingData, isStreaming, str
                 {streamingData && (
                     <div className="relative">
                         <div className="bg-muted inline-block max-w-[80%] rounded-lg p-3">
-                            <p className="whitespace-pre-wrap">{streamingData}</p>
+                            <div className="prose dark:prose-invert whitespace-pre-wrap">
+                                <MemoizedMarkdown id={`streaming-${streamId}`} content={streamingData} />
+                            </div>
                         </div>
                     </div>
                 )}
