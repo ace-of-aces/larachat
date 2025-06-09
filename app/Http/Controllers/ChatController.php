@@ -161,6 +161,7 @@ class ChatController extends Controller
                 yield $fullResponse;
             } else {
                 try {
+                    set_time_limit(0); // Disable script timeout for long-running requests
 
                     $response = Prism::text()
                         ->using(Provider::Ollama, 'llama3:8b')
