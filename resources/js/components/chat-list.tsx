@@ -14,7 +14,6 @@ import {
     AlertDialogTrigger,
 } from './ui/alert-dialog';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { useSidebar } from './ui/sidebar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
@@ -87,22 +86,16 @@ export default function ChatList({ currentChatId, isAuthenticated }: ChatListPro
     useEffect(() => {
         const handleTitleUpdate = (event: CustomEvent) => {
             const { chatId, newTitle } = event.detail;
-            
+
             // Update local state
-            setChats((prevChats) => 
-                prevChats.map((chat) => 
-                    chat.id === chatId ? { ...chat, title: newTitle } : chat
-                )
-            );
-            
+            setChats((prevChats) => prevChats.map((chat) => (chat.id === chatId ? { ...chat, title: newTitle } : chat)));
+
             // Update cache
-            chatCache = chatCache.map((chat) => 
-                chat.id === chatId ? { ...chat, title: newTitle } : chat
-            );
+            chatCache = chatCache.map((chat) => (chat.id === chatId ? { ...chat, title: newTitle } : chat));
         };
 
         window.addEventListener('chatTitleUpdated', handleTitleUpdate as EventListener);
-        
+
         return () => {
             window.removeEventListener('chatTitleUpdated', handleTitleUpdate as EventListener);
         };
@@ -248,33 +241,51 @@ export default function ChatList({ currentChatId, isAuthenticated }: ChatListPro
                                         <div key={chat.id} className="group/chat relative">
                                             {editingChatId === chat.id ? (
                                                 // Edit mode
-                                                <div className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm">
+                                                <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm">
                                                     <MessageSquare className="h-4 w-4 flex-shrink-0" />
-                                                    <Input
-                                                        ref={editInputRef}
-                                                        value={data.title}
-                                                        onChange={(e) => setData('title', e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') {
-                                                                saveTitle(chat.id);
-                                                            } else if (e.key === 'Escape') {
-                                                                cancelEditing();
-                                                            }
-                                                        }}
-                                                        className="h-6 flex-1 text-xs"
-                                                    />
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-5 w-5 hover:bg-green-50 dark:hover:bg-green-950/20"
-                                                        onClick={() => saveTitle(chat.id)}
-                                                        disabled={processing}
-                                                    >
-                                                        <Check className="h-3 w-3 text-green-600 transition-colors hover:text-green-700" />
-                                                    </Button>
-                                                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={cancelEditing}>
-                                                        <X className="text-muted-foreground h-3 w-3" />
-                                                    </Button>
+                                                    <div className="relative flex min-w-0 flex-1 items-center">
+                                                        <input
+                                                            ref={editInputRef}
+                                                            value={data.title}
+                                                            onChange={(e) => setData('title', e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    saveTitle(chat.id);
+                                                                } else if (e.key === 'Escape') {
+                                                                    cancelEditing();
+                                                                }
+                                                            }}
+                                                            className="w-full outline-none"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-shrink-0 items-center gap-1">
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    className="h-5 w-5 hover:bg-green-50 dark:hover:bg-green-950/20"
+                                                                    onClick={() => saveTitle(chat.id)}
+                                                                    disabled={processing}
+                                                                >
+                                                                    <Check className="h-3 w-3 text-green-600 transition-colors hover:text-green-700" />
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="bottom">
+                                                                <p>Save Title</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-5 w-5" onClick={cancelEditing}>
+                                                                    <X className="text-muted-foreground h-3 w-3" />
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="bottom">
+                                                                <p>Discard</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </div>
                                                 </div>
                                             ) : (
                                                 // View mode
@@ -303,43 +314,62 @@ export default function ChatList({ currentChatId, isAuthenticated }: ChatListPro
 
                                                     {/* Edit and Delete buttons - only visible on hover of this specific chat */}
                                                     <div className="absolute top-1/2 right-1 flex -translate-y-1/2 gap-1">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-6 w-6 opacity-0 transition-all duration-200 group-hover/chat:opacity-100 hover:bg-green-50 dark:hover:bg-green-950/20"
-                                                            onClick={(e) => handleEditClick(chat.id, chat.title || 'Untitled Chat', e)}
-                                                        >
-                                                            <Pencil className="text-muted-foreground h-3 w-3 transition-colors hover:text-green-600" />
-                                                        </Button>
-                                                        <AlertDialog>
-                                                            <AlertDialogTrigger asChild>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
-                                                                    className="hover:bg-destructive/10 h-6 w-6 opacity-0 transition-all duration-200 group-hover/chat:opacity-100"
+                                                                    className="h-6 w-6 opacity-0 transition-all duration-200 group-hover/chat:opacity-100 hover:bg-green-50 dark:hover:bg-green-950/20"
+                                                                    onClick={(e) => handleEditClick(chat.id, chat.title || 'Untitled Chat', e)}
                                                                 >
-                                                                    <Trash2 className="text-muted-foreground hover:text-destructive h-3 w-3 transition-colors" />
+                                                                    <Pencil className="text-muted-foreground h-3 w-3 transition-colors hover:text-green-600" />
                                                                 </Button>
-                                                            </AlertDialogTrigger>
-                                                            <AlertDialogContent>
-                                                                <AlertDialogHeader>
-                                                                    <AlertDialogTitle>Delete Chat</AlertDialogTitle>
-                                                                    <AlertDialogDescription>
-                                                                        Are you sure you want to delete "{chat.title}"? This action cannot be undone
-                                                                        and will permanently delete the chat and all its messages.
-                                                                    </AlertDialogDescription>
-                                                                </AlertDialogHeader>
-                                                                <AlertDialogFooter>
-                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                                    <AlertDialogAction
-                                                                        onClick={() => handleDeleteChat(chat.id)}
-                                                                        className="bg-destructive hover:bg-destructive/90 focus:ring-destructive text-white"
-                                                                    >
-                                                                        Delete
-                                                                    </AlertDialogAction>
-                                                                </AlertDialogFooter>
-                                                            </AlertDialogContent>
-                                                        </AlertDialog>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent side="bottom">
+                                                                <p>Edit Chat Title</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                        <div className="flex">
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    <div>
+                                                                        <AlertDialog>
+                                                                            <AlertDialogTrigger asChild>
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="icon"
+                                                                                    className="hover:bg-destructive/10 h-6 w-6 opacity-0 transition-all duration-200 group-hover/chat:opacity-100"
+                                                                                >
+                                                                                    <Trash2 className="text-muted-foreground hover:text-destructive h-3 w-3 transition-colors" />
+                                                                                </Button>
+                                                                            </AlertDialogTrigger>
+                                                                            <AlertDialogContent>
+                                                                                <AlertDialogHeader>
+                                                                                    <AlertDialogTitle>Delete Chat</AlertDialogTitle>
+                                                                                    <AlertDialogDescription>
+                                                                                        Are you sure you want to delete "{chat.title}"? This action
+                                                                                        cannot be undone and will permanently delete the chat and all
+                                                                                        its messages.
+                                                                                    </AlertDialogDescription>
+                                                                                </AlertDialogHeader>
+                                                                                <AlertDialogFooter>
+                                                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                                                    <AlertDialogAction
+                                                                                        onClick={() => handleDeleteChat(chat.id)}
+                                                                                        className="bg-destructive hover:bg-destructive/90 focus:ring-destructive text-white"
+                                                                                    >
+                                                                                        Delete
+                                                                                    </AlertDialogAction>
+                                                                                </AlertDialogFooter>
+                                                                            </AlertDialogContent>
+                                                                        </AlertDialog>
+                                                                    </div>
+                                                                </TooltipTrigger>
+                                                                <TooltipContent side="bottom">
+                                                                    <p>Delete Chat</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </div>
                                                     </div>
                                                 </>
                                             )}
